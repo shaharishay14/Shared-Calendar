@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, TouchableOpacity, FlatList } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 // import { Calendar } from 'react-native-calendars';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { getAllEventsSorted, deleteEvent, supabase, HOUSEHOLD_ID, SUPABASE_ENABLED } from '../database/db';
@@ -38,6 +39,31 @@ function buildMarkedDates(events) {
 
 export default function HomeScreen() {
   const navigation = useNavigation();
+
+  // Set header with Week Planner button
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <TouchableOpacity
+          onPress={() => navigation.navigate('WeekPlanner')}
+          style={{
+            marginRight: 16,
+            backgroundColor: '#00ADB5',
+            paddingHorizontal: 12,
+            paddingVertical: 6,
+            borderRadius: 8,
+            flexDirection: 'row',
+            alignItems: 'center'
+          }}
+        >
+          <MaterialCommunityIcons name="calendar-week" size={18} color="#EEEEEE" />
+          <Text style={{ color: '#EEEEEE', marginLeft: 4, fontSize: 12, fontWeight: '500' }}>
+            Week
+          </Text>
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation]);
   const [events, setEvents] = useState([]);
   const [markedDates, setMarkedDates] = useState({});
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10)); // YYYY-MM-DD format

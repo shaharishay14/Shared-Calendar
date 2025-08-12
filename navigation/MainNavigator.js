@@ -9,6 +9,8 @@ import DeviceRegisterScreen from '../screens/DeviceRegisterScreen';
 import AppGateScreen from '../screens/AppGateScreen';
 import LocationPickerScreen from '../screens/LocationPickerScreen';
 import EventInfoScreen from '../screens/EventInfoScreen';
+import WeekPlannerScreen from '../screens/WeekPlannerScreen';
+import PlannerPreferencesScreen from '../screens/PlannerPreferencesScreen';
 
 const Stack = createStackNavigator();
 
@@ -56,6 +58,8 @@ export default function MainNavigator() {
         />
         <Stack.Screen name="LocationPicker" component={LocationPickerScreen} options={{ title: 'Pick Location' }} />
         <Stack.Screen name="EventInfo" component={EventInfoScreen} options={{ title: 'Event Details' }} />
+        <Stack.Screen name="WeekPlanner" component={WeekPlannerScreen} options={{ title: 'Week Planner' }} />
+        <Stack.Screen name="PlannerPreferences" component={PlannerPreferencesScreen} options={{ title: 'Planner Settings' }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

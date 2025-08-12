@@ -47,92 +47,209 @@ function getLocalDateKey(date) {
   return `${year}-${month}-${day}`;
 }
 
-// Sample traffic guidelines (would come from preferences)
-const defaultTrafficGuidelines = {
+// Real-world planning parameters based on your situation
+const planningConfig = {
+  // Partner's fixed schedule
+  partner: {
+    workDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+    workHours: { start: '07:30', end: '15:30' },
+    location: 'Kfar Saba'
+  },
+  
+  // Travel times (minutes)
+  travelTimes: {
+    normal: {
+      'Kfar Saba': { 'Beit Dagan': 30, 'Rishon Lezion': 35, 'Nir Tzvi': 35 },
+      'Beit Dagan': { 'Kfar Saba': 30, 'Rishon Lezion': 5, 'Nir Tzvi': 15 },
+      'Rishon Lezion': { 'Kfar Saba': 35, 'Beit Dagan': 5, 'Nir Tzvi': 15 },
+      'Nir Tzvi': { 'Kfar Saba': 35, 'Beit Dagan': 15, 'Rishon Lezion': 15 }
+    },
+    rush: {
+      'Kfar Saba': { 'Beit Dagan': 45, 'Rishon Lezion': 50, 'Nir Tzvi': 45 },
+      'Beit Dagan': { 'Kfar Saba': 45, 'Rishon Lezion': 5, 'Nir Tzvi': 15 },
+      'Rishon Lezion': { 'Kfar Saba': 50, 'Beit Dagan': 5, 'Nir Tzvi': 15 },
+      'Nir Tzvi': { 'Kfar Saba': 45, 'Beit Dagan': 15, 'Rishon Lezion': 15 }
+    }
+  },
+  
+  // Rush hour periods
   rushHours: {
-    morning: { start: '07:00', end: '09:30' },
-    evening: { start: '16:30', end: '19:00' }
+    morning: { start: '07:30', end: '10:00' },
+    evening: { start: '15:00', end: '19:00' }
   },
-  trafficMultipliers: {
-    normal: 1.0,
-    light: 0.8,
-    heavy: 1.5,
-    rush: 2.0
+  
+  // Public transport options
+  publicTransport: {
+    trainStations: {
+      'Kfar Saba': ['Kfar Saba', 'Hod Hasharon'],
+      'Beit Dagan': ['Kfar Chabad'], // 15 min drive
+      'Rishon Lezion': ['Kfar Chabad'] // 15 min drive
+    },
+    trainTravelTime: 45, // Kfar Saba <-> Kfar Chabad
+    stationDriveTime: 15 // Drive to/from Kfar Chabad
   },
-  maxDailyDriving: 180, // minutes
-  bufferTime: 15, // minutes before each event
-  preferredSleepLocation: 'home', // home, partner, optimal
-  longDriveThreshold: 90, // minutes - suggest overnight stay
+  
+  // Home locations
   locations: {
-    home: { address: 'Home', lat: null, lng: null },
-    work: { address: 'Work', lat: null, lng: null },
-    partner: { address: "Partner's Place", lat: null, lng: null }
+    yourHome: 'Beit Dagan',
+    partnerHome: 'Kfar Saba',
+    yourWork: 'Rishon Lezion',
+    partnerWork: 'Kfar Saba',
+    tennis: 'Nir Tzvi'
   }
 };
 
-// Helper function to estimate travel time between two locations
-function estimateTravelTime(fromLocation, toLocation, departureTime, guidelines = defaultTrafficGuidelines) {
-  if (!fromLocation || !toLocation) return 30; // Default 30 minutes
+// Helper function to get real travel time between locations
+function getTravelTime(from, to, departureTime) {
+  if (!from || !to || from === to) return 0;
   
-  // Simple distance estimation (in real app, would use Google Maps API)
-  const baseTime = 30; // Base travel time in minutes
+  // Normalize location names to match our config
+  const normalizeLocation = (loc) => {
+    if (loc.toLowerCase().includes('kfar saba')) return 'Kfar Saba';
+    if (loc.toLowerCase().includes('beit dagan')) return 'Beit Dagan';
+    if (loc.toLowerCase().includes('rishon')) return 'Rishon Lezion';
+    if (loc.toLowerCase().includes('nir tzvi') || loc.toLowerCase().includes('tennis')) return 'Nir Tzvi';
+    return loc;
+  };
+  
+  const fromNorm = normalizeLocation(from);
+  const toNorm = normalizeLocation(to);
   
   // Check if departure is during rush hour
   const hour = new Date(departureTime).getHours();
   const minute = new Date(departureTime).getMinutes();
   const timeString = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
   
-  let multiplier = guidelines.trafficMultipliers.normal;
+  const isRushHour = (timeString >= planningConfig.rushHours.morning.start && timeString <= planningConfig.rushHours.morning.end) ||
+                    (timeString >= planningConfig.rushHours.evening.start && timeString <= planningConfig.rushHours.evening.end);
   
-  if ((timeString >= guidelines.rushHours.morning.start && timeString <= guidelines.rushHours.morning.end) ||
-      (timeString >= guidelines.rushHours.evening.start && timeString <= guidelines.rushHours.evening.end)) {
-    multiplier = guidelines.trafficMultipliers.rush;
+  // Get travel time from our real data
+  const travelMatrix = isRushHour ? planningConfig.travelTimes.rush : planningConfig.travelTimes.normal;
+  
+  if (travelMatrix[fromNorm] && travelMatrix[fromNorm][toNorm] !== undefined) {
+    return travelMatrix[fromNorm][toNorm];
   }
   
-  return Math.round(baseTime * multiplier);
+  return 30; // Default fallback
 }
 
-// Helper function to find optimal sleep location
-function findOptimalSleepLocation(currentDayEvents, nextDayEvents, guidelines = defaultTrafficGuidelines) {
-  const locations = guidelines.locations;
+// Helper function to determine if public transport is better
+function shouldUsePublicTransport(from, to, departureTime) {
+  const fromNorm = from.toLowerCase().includes('kfar saba') ? 'Kfar Saba' : 
+                   (from.toLowerCase().includes('beit dagan') ? 'Beit Dagan' : 'Rishon Lezion');
+  const toNorm = to.toLowerCase().includes('kfar saba') ? 'Kfar Saba' : 
+                 (to.toLowerCase().includes('beit dagan') ? 'Beit Dagan' : 'Rishon Lezion');
   
-  // If no events tomorrow, prefer home
-  if (!nextDayEvents || nextDayEvents.length === 0) {
-    return { location: 'home', reason: 'No events tomorrow' };
+  // Only suggest train for Kfar Saba <-> Beit Dagan/Rishon routes
+  if (!((fromNorm === 'Kfar Saba' && (toNorm === 'Beit Dagan' || toNorm === 'Rishon Lezion')) ||
+        (toNorm === 'Kfar Saba' && (fromNorm === 'Beit Dagan' || fromNorm === 'Rishon Lezion')))) {
+    return { recommended: false, reason: 'No convenient train route' };
   }
   
-  const firstEventTomorrow = nextDayEvents[0];
-  const lastEventToday = currentDayEvents[currentDayEvents.length - 1];
+  // Check if it's rush hour
+  const hour = new Date(departureTime).getHours();
+  const minute = new Date(departureTime).getMinutes();
+  const timeString = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
   
-  // Calculate travel times from each potential sleep location to first event tomorrow
-  const travelTimes = {};
-  Object.keys(locations).forEach(locationKey => {
-    const location = locations[locationKey];
-    if (firstEventTomorrow.location) {
-      travelTimes[locationKey] = estimateTravelTime(
-        location.address,
-        firstEventTomorrow.location,
-        new Date(firstEventTomorrow.date)
-      );
-    } else {
-      travelTimes[locationKey] = 30; // Default
+  const isRushHour = (timeString >= planningConfig.rushHours.morning.start && timeString <= planningConfig.rushHours.morning.end) ||
+                    (timeString >= planningConfig.rushHours.evening.start && timeString <= planningConfig.rushHours.evening.end);
+  
+  if (isRushHour) {
+    const carTime = getTravelTime(from, to, departureTime);
+    const trainTime = planningConfig.publicTransport.trainTravelTime + (2 * planningConfig.publicTransport.stationDriveTime);
+    
+    if (trainTime < carTime) {
+      return { 
+        recommended: true, 
+        reason: `Train faster during rush hour (${trainTime}min vs ${carTime}min by car)`,
+        trainTime,
+        carTime
+      };
     }
-  });
+  }
   
-  // Find location with shortest travel time
-  const optimalLocation = Object.keys(travelTimes).reduce((best, current) => 
-    travelTimes[current] < travelTimes[best] ? current : best
-  );
+  return { recommended: false, reason: 'Car is faster/more convenient' };
+}
+
+// Helper function to find optimal sleep location based on real logic
+function findOptimalSleepLocation(todayEvents, tomorrowEvents, dayOfWeek) {
+  const { yourHome, partnerHome } = planningConfig.locations;
   
-  // Only suggest non-home if it saves significant time
-  if (optimalLocation !== 'home' && travelTimes['home'] - travelTimes[optimalLocation] > 20) {
-    return {
-      location: optimalLocation,
-      reason: `Saves ${travelTimes['home'] - travelTimes[optimalLocation]} minutes tomorrow morning`
+  // If no events tomorrow, default to your home
+  if (!tomorrowEvents || tomorrowEvents.length === 0) {
+    return { location: yourHome, reason: 'No events tomorrow, stay home' };
+  }
+  
+  const firstEventTomorrow = tomorrowEvents[0];
+  const lastEventToday = todayEvents.length > 0 ? todayEvents[todayEvents.length - 1] : null;
+  
+  // Calculate morning travel times from both locations
+  const travelFromYourHome = getTravelTime(yourHome, firstEventTomorrow.location, new Date(firstEventTomorrow.date));
+  const travelFromPartnerHome = getTravelTime(partnerHome, firstEventTomorrow.location, new Date(firstEventTomorrow.date));
+  
+  // Decision logic based on your real behavior:
+  
+  // 1. If first event is near your home (Beit Dagan/Rishon/Tennis), sleep at home
+  const eventLocation = firstEventTomorrow.location?.toLowerCase() || '';
+  if (eventLocation.includes('beit dagan') || eventLocation.includes('rishon') || 
+      eventLocation.includes('tennis') || eventLocation.includes('nir tzvi')) {
+    return { 
+      location: yourHome, 
+      reason: `First event tomorrow is near your home (${Math.round(travelFromYourHome)}min drive)` 
     };
   }
   
-  return { location: 'home', reason: 'Most convenient overall' };
+  // 2. If you have early work (8 AM shift) and it's significantly closer from partner's
+  const firstEventTime = new Date(firstEventTomorrow.date).getHours();
+  if (firstEventTime <= 8 && travelFromPartnerHome < travelFromYourHome - 10) {
+    return { 
+      location: partnerHome, 
+      reason: `Early morning shift - saves ${travelFromYourHome - travelFromPartnerHome}min from partner's place` 
+    };
+  }
+  
+  // 3. If last event today was near Kfar Saba and you have early events tomorrow
+  if (lastEventToday) {
+    const lastEventLocation = lastEventToday.location?.toLowerCase() || '';
+    const lastEventEndTime = new Date(lastEventToday.endDate || lastEventToday.date).getHours();
+    
+    if (lastEventLocation.includes('kfar saba') && lastEventEndTime >= 18) {
+      return { 
+        location: partnerHome, 
+        reason: 'Last event was in Kfar Saba area, convenient to stay' 
+      };
+    }
+  }
+  
+  // 4. If tomorrow is a rest day or light schedule, prefer being together
+  if (tomorrowEvents.length <= 1 && firstEventTime >= 10) {
+    return { 
+      location: partnerHome, 
+      reason: 'Light schedule tomorrow, good time to be together' 
+    };
+  }
+  
+  // 5. Default: minimize total driving (today's end + tomorrow's start)
+  let totalDrivingFromHome = travelFromYourHome;
+  let totalDrivingFromPartner = travelFromPartnerHome;
+  
+  // Add driving to get to sleep location from today's last event
+  if (lastEventToday) {
+    totalDrivingFromHome += getTravelTime(lastEventToday.location, yourHome, new Date(lastEventToday.endDate || lastEventToday.date));
+    totalDrivingFromPartner += getTravelTime(lastEventToday.location, partnerHome, new Date(lastEventToday.endDate || lastEventToday.date));
+  }
+  
+  if (totalDrivingFromPartner < totalDrivingFromHome - 15) {
+    return { 
+      location: partnerHome, 
+      reason: `Minimizes total driving (${Math.round(totalDrivingFromPartner)}min vs ${Math.round(totalDrivingFromHome)}min)` 
+    };
+  }
+  
+  return { 
+    location: yourHome, 
+    reason: `Most convenient overall (${Math.round(totalDrivingFromHome)}min total travel)` 
+  };
 }
 
 export default function WeekPlannerScreen({ navigation }) {
@@ -227,10 +344,10 @@ export default function WeekPlannerScreen({ navigation }) {
         if (currentEvent.location && nextEvent.location) {
           // Calculate departure time (end of current event + buffer)
           const currentEndTime = new Date(currentEvent.endDate || currentEvent.date);
-          const departureTime = new Date(currentEndTime.getTime() + (defaultTrafficGuidelines.bufferTime * 60000));
+          const departureTime = new Date(currentEndTime.getTime() + (15 * 60000)); // 15 min buffer
           
-          // Estimate travel time considering traffic
-          const estimatedTime = estimateTravelTime(
+          // Get real travel time based on your locations
+          const estimatedTime = getTravelTime(
             currentEvent.location,
             nextEvent.location,
             departureTime
@@ -267,14 +384,14 @@ export default function WeekPlannerScreen({ navigation }) {
       const tomorrowKey = getLocalDateKey(tomorrow);
       const tomorrowEvents = eventsByDay[tomorrowKey] || [];
       
-      const sleepOptimization = findOptimalSleepLocation(dayEvents, tomorrowEvents);
+      const sleepOptimization = findOptimalSleepLocation(dayEvents, tomorrowEvents, formatDate(date).toLowerCase());
       
       // Analyze day's schedule
       const dayAnalysis = {
         isBusy: dayEvents.length > 3,
-        isLongDrivingDay: dailyDriving > defaultTrafficGuidelines.maxDailyDriving,
+        isLongDrivingDay: dailyDriving > 180, // More than 3 hours of driving
         hasRushHourTravel: rushHourConflicts.length > 0,
-        hasLongDrives: travelTimes.some(t => t.duration > defaultTrafficGuidelines.longDriveThreshold),
+        hasLongDrives: travelTimes.some(t => t.duration > 60), // Drives longer than 1 hour
         totalEventTime: dayEvents.reduce((total, event) => {
           const start = new Date(event.date);
           const end = new Date(event.endDate || event.date);
@@ -310,44 +427,84 @@ export default function WeekPlannerScreen({ navigation }) {
   const generateDayRecommendations = (dayEvents, travelTimes, analysis, sleepOptimization) => {
     const recommendations = [];
     
+    // Sleep location recommendation
+    const sleepLocation = sleepOptimization.location === planningConfig.locations.yourHome ? 'your place' : "partner's place";
+    recommendations.push({
+      type: 'suggestion',
+      icon: '🛏️',
+      title: `Sleep at ${sleepLocation}`,
+      message: sleepOptimization.reason
+    });
+    
+    // Public transport recommendations
+    travelTimes.forEach(travel => {
+      const publicTransportCheck = shouldUsePublicTransport(travel.fromLocation, travel.toLocation, travel.departure);
+      if (publicTransportCheck.recommended) {
+        recommendations.push({
+          type: 'suggestion',
+          icon: '🚂',
+          title: 'Take the Train',
+          message: `${travel.from} → ${travel.to}: ${publicTransportCheck.reason}`
+        });
+      }
+    });
+    
+    // Rush hour warnings with specific advice
     if (analysis.hasRushHourTravel) {
       recommendations.push({
         type: 'warning',
         icon: '🚦',
-        title: 'Rush Hour Alert',
-        message: 'Consider adjusting departure times to avoid heavy traffic'
+        title: 'Rush Hour Travel',
+        message: 'Consider leaving 15 minutes earlier or using train during peak hours'
       });
     }
     
+    // Heavy driving day
     if (analysis.isLongDrivingDay) {
       recommendations.push({
         type: 'warning',
         icon: '🚗',
         title: 'Heavy Driving Day',
-        message: `${Math.round(analysis.totalEventTime / 60)}h of driving planned. Consider grouping events or staying overnight.`
+        message: `${Math.round(analysis.totalEventTime / 60)}h+ of driving. Consider staying overnight or grouping trips.`
       });
     }
     
-    if (sleepOptimization.location !== 'home') {
-      recommendations.push({
-        type: 'suggestion',
-        icon: '🛏️',
-        title: 'Sleep Location',
-        message: `Stay at ${sleepOptimization.location} tonight. ${sleepOptimization.reason}.`
-      });
+    // Partner coordination opportunities
+    const partnerWorkEnd = new Date();
+    partnerWorkEnd.setHours(15, 30, 0); // Partner ends at 15:30
+    
+    const yourEventsAfter3pm = dayEvents.filter(event => {
+      const eventTime = new Date(event.date);
+      return eventTime.getHours() >= 15;
+    });
+    
+    if (yourEventsAfter3pm.length > 0) {
+      const firstAfternoonEvent = yourEventsAfter3pm[0];
+      const eventLocation = firstAfternoonEvent.location?.toLowerCase() || '';
+      
+      if (eventLocation.includes('beit dagan') || eventLocation.includes('rishon') || eventLocation.includes('nir tzvi')) {
+        recommendations.push({
+          type: 'info',
+          icon: '🚗',
+          title: 'Partner Pickup Opportunity',
+          message: `Partner finishes work at 15:30. Could pick her up for ${firstAfternoonEvent.title}?`
+        });
+      }
     }
     
-    if (analysis.isBusy && dayEvents.length > 0) {
+    // Long day warning
+    if (dayEvents.length > 0) {
       const firstEvent = dayEvents[0];
       const lastEvent = dayEvents[dayEvents.length - 1];
-      const daySpan = (new Date(lastEvent.date) - new Date(firstEvent.date)) / (1000 * 60 * 60);
+      const firstTime = new Date(firstEvent.date).getHours();
+      const lastTime = new Date(lastEvent.endDate || lastEvent.date).getHours();
       
-      if (daySpan > 10) {
+      if (lastTime - firstTime > 10) {
         recommendations.push({
           type: 'info',
           icon: '⏰',
-          title: 'Long Day',
-          message: 'Schedule breaks between events to avoid fatigue'
+          title: 'Long Day Ahead',
+          message: 'Consider scheduling meal breaks and rest time between events'
         });
       }
     }
@@ -360,7 +517,7 @@ export default function WeekPlannerScreen({ navigation }) {
     const suggestions = [];
     const totalHours = Math.round(plan.totalDriving / 60 * 10) / 10;
     
-    if (plan.totalDriving > defaultTrafficGuidelines.maxDailyDriving * 5) {
+    if (plan.totalDriving > 180 * 5) { // More than 15 hours of driving per week
       suggestions.push({
         type: 'warning',
         message: `High weekly driving time (${totalHours}h). Consider consolidating trips or working remotely some days.`

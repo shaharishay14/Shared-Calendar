@@ -61,8 +61,9 @@ export async function initializeDatabase() {
   } catch (e) {
     // ignore if column already exists
   }
-  // Ensure Supabase table exists: you should create this in the Supabase dashboard
+  // Ensure Supabase tables exist: you should create these in the Supabase dashboard
   // Table: events (id bigint PK, title text, start timestamptz, end timestamptz, category text, createdBy text, householdId text, updatedAt timestamptz)
+  // Table: household_members (id bigint PK, householdId text, userId text, name text, email text, avatar text, role text, joinedAt timestamptz, isActive boolean)
 }
 
 export async function insertEvent({ title, dateIsoString, endDateIsoString, category, location, lat, lng, createdBy }, onSuccess, onError) {
@@ -187,6 +188,150 @@ export async function deleteEvent(id, onSuccess, onError) {
     if (onSuccess) onSuccess();
   } catch (error) {
     if (onError) onError(error);
+  }
+}
+
+// Household Members Functions
+export async function saveHouseholdMember({ name, email, avatar, role = 'member', userId }) {
+  try {
+    if (!SUPABASE_ENABLED) {
+      console.warn('Supabase not enabled, cannot save household member');
+      return { success: false, error: 'Database not available' };
+    }
+
+    // Get current authenticated user if no userId provided
+    let memberUserId = userId;
+    if (!memberUserId) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        return { success: false, error: 'User not authenticated' };
+      }
+      memberUserId = user.id;
+    }
+
+    const { data, error } = await supabase.from('household_members').upsert({
+      householdId: HOUSEHOLD_ID,
+      userId: memberUserId,
+      name,
+      email: email || '',
+      avatar: avatar || null,
+      role,
+      joinedAt: new Date().toISOString(),
+      isActive: true
+    }, {
+      onConflict: 'householdId,userId'
+    }).select();
+
+    if (error) {
+      console.error('Error saving household member:', error);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, data: data?.[0] };
+  } catch (error) {
+    console.error('Error saving household member:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+export async function getHouseholdMembers() {
+  try {
+    if (!SUPABASE_ENABLED) {
+      console.warn('Supabase not enabled, returning mock household members');
+      return {
+        success: true,
+        data: [
+          {
+            id: 1,
+            userId: 'demo_user_1',
+            name: 'You',
+            email: 'you@example.com',
+            avatar: null,
+            role: 'admin',
+            joinedAt: new Date().toISOString(),
+            isActive: true
+          }
+        ]
+      };
+    }
+
+    const { data, error } = await supabase
+      .from('household_members')
+      .select('*')
+      .eq('householdId', HOUSEHOLD_ID)
+      .eq('isActive', true)
+      .order('joinedAt', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching household members:', error);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true, data: data || [] };
+  } catch (error) {
+    console.error('Error fetching household members:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+export async function removeHouseholdMember(userId) {
+  try {
+    if (!SUPABASE_ENABLED) {
+      console.warn('Supabase not enabled, cannot remove household member');
+      return { success: false, error: 'Database not available' };
+    }
+
+    const { error } = await supabase
+      .from('household_members')
+      .update({ isActive: false })
+      .eq('householdId', HOUSEHOLD_ID)
+      .eq('userId', userId);
+
+    if (error) {
+      console.error('Error removing household member:', error);
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error removing household member:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+export async function inviteHouseholdMember(email, role = 'member') {
+  try {
+    if (!SUPABASE_ENABLED) {
+      console.warn('Supabase not enabled, cannot invite household member');
+      return { success: false, error: 'Database not available' };
+    }
+
+    // Generate a temporary userId for the invite
+    const inviteUserId = `invite_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    const { data, error } = await supabase.from('household_members').insert({
+      householdId: HOUSEHOLD_ID,
+      userId: inviteUserId,
+      name: email.split('@')[0], // Use email prefix as temporary name
+      email,
+      avatar: null,
+      role,
+      joinedAt: new Date().toISOString(),
+      isActive: false // Will be activated when they accept
+    }).select();
+
+    if (error) {
+      console.error('Error inviting household member:', error);
+      return { success: false, error: error.message };
+    }
+
+    // In a real app, you would send an email invitation here
+    console.log('Invitation created for:', email);
+    
+    return { success: true, data: data?.[0] };
+  } catch (error) {
+    console.error('Error inviting household member:', error);
+    return { success: false, error: error.message };
   }
 }
 

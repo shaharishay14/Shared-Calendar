@@ -11,11 +11,19 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Allow Shared Calendar to access your location to pick event locations."
+        "NSLocationWhenInUseUsageDescription": "Allow Shared Calendar to access your location to pick event locations.",
+        "NSCameraUsageDescription": "Allow Shared Calendar to access your camera to take profile pictures.",
+        "NSPhotoLibraryUsageDescription": "Allow Shared Calendar to access your photo library to select profile pictures."
       }
     },
     "android": {
-      "permissions": ["ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"],
+      "permissions": [
+        "ACCESS_COARSE_LOCATION", 
+        "ACCESS_FINE_LOCATION",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#ffffff"
       }

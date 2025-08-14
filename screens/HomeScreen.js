@@ -40,9 +40,20 @@ function buildMarkedDates(events) {
 export default function HomeScreen() {
   const navigation = useNavigation();
 
-  // Set header with Week Planner button
+  // Set header with hamburger menu and Week Planner button
   useEffect(() => {
     navigation.setOptions({
+      headerLeft: () => (
+        <TouchableOpacity
+          onPress={() => navigation.openDrawer()}
+          style={{
+            marginLeft: 16,
+            padding: 8
+          }}
+        >
+          <MaterialCommunityIcons name="menu" size={24} color="#EEEEEE" />
+        </TouchableOpacity>
+      ),
       headerRight: () => (
         <TouchableOpacity
           onPress={() => navigation.navigate('WeekPlanner')}

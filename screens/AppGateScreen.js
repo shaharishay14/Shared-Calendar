@@ -19,7 +19,7 @@ export default function AppGateScreen({ navigation }) {
     (async () => {
       // If Supabase is not configured, skip gating
       if (!SUPABASE_ENABLED || !supabase) {
-        navigation.replace('Home');
+        navigation.replace('MainApp');
         return;
       }
 
@@ -47,7 +47,7 @@ export default function AppGateScreen({ navigation }) {
       }
 
       if (existing) {
-        navigation.replace('Home');
+        navigation.replace('MainApp');
       } else {
         navigation.replace('DeviceRegister', { householdId: HOUSEHOLD_ID });
       }

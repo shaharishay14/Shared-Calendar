@@ -6,10 +6,16 @@ import {
   TouchableOpacity,
   Alert,
   FlatList,
+  Modal,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { getAllEventsSorted } from '../database/db';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import AIChatInterface from '../components/AIChatInterface';
+import aiPlannerService from '../services/aiPlannerService';
+import publicTransportService from '../services/publicTransportService';
 
 // Helper function to get week dates
 function getWeekDates(startDate = new Date()) {
@@ -252,11 +258,17 @@ function findOptimalSleepLocation(todayEvents, tomorrowEvents, dayOfWeek) {
   };
 }
 
+const PREFERENCES_KEY = 'planner_preferences';
+
 export default function WeekPlannerScreen({ navigation }) {
   const [events, setEvents] = useState([]);
   const [currentWeek, setCurrentWeek] = useState(new Date());
   const [weekPlan, setWeekPlan] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [preferences, setPreferences] = useState({});
+  const [showAIChat, setShowAIChat] = useState(false);
+  const [aiEnabled, setAiEnabled] = useState(false);
+  const insets = useSafeAreaInsets();
 
   const weekDates = useMemo(() => getWeekDates(currentWeek), [currentWeek]);
 
@@ -272,6 +284,29 @@ export default function WeekPlannerScreen({ navigation }) {
     });
     return grouped;
   }, [events, weekDates]);
+
+  // Load preferences and initialize AI
+  useEffect(() => {
+    const loadPreferences = async () => {
+      try {
+        const stored = await AsyncStorage.getItem(PREFERENCES_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          setPreferences(parsed);
+          setAiEnabled(parsed.aiEnabled || false);
+          
+          // Initialize AI service if enabled
+          if (parsed.aiEnabled) {
+            await aiPlannerService.initialize();
+          }
+        }
+      } catch (error) {
+        console.error('Error loading preferences:', error);
+      }
+    };
+
+    loadPreferences();
+  }, []);
 
   // Load events
   useEffect(() => {
@@ -313,8 +348,8 @@ export default function WeekPlannerScreen({ navigation }) {
     loadEvents();
   }, [weekDates]);
 
-  // Intelligent planning algorithm
-  const generateWeekPlan = () => {
+  // Enhanced intelligent planning algorithm with AI and public transport
+  const generateWeekPlan = async () => {
     console.log('Generating intelligent week plan...');
     
     const plan = {
@@ -322,7 +357,9 @@ export default function WeekPlannerScreen({ navigation }) {
       dailyPlans: [],
       totalDriving: 0,
       suggestions: [],
-      optimizations: []
+      optimizations: [],
+      publicTransportOptions: [],
+      aiGenerated: false
     };
 
     // Process each day
@@ -364,7 +401,15 @@ export default function WeekPlannerScreen({ navigation }) {
               departure: departureTime
             });
           }
-          
+
+          // Get public transport options
+          const transportOptions = publicTransportService.getTransportRecommendation(
+            currentEvent.location,
+            nextEvent.location,
+            departureTime,
+            preferences
+          );
+
           travelTimes.push({
             from: currentEvent.title,
             to: nextEvent.title,
@@ -373,8 +418,18 @@ export default function WeekPlannerScreen({ navigation }) {
             duration: estimatedTime,
             departure: departureTime,
             isRushHour,
-            suggestion: isRushHour ? 'Consider leaving earlier to avoid rush hour' : null
+            suggestion: isRushHour ? 'Consider leaving earlier to avoid rush hour' : null,
+            publicTransport: transportOptions
           });
+
+          // Add to plan's public transport options if available
+          if (transportOptions.primary && transportOptions.primary[1]?.available) {
+            plan.publicTransportOptions.push({
+              from: currentEvent.title,
+              to: nextEvent.title,
+              recommendation: transportOptions
+            });
+          }
         }
       }
 
@@ -418,6 +473,31 @@ export default function WeekPlannerScreen({ navigation }) {
 
     // Generate week-level suggestions
     plan.suggestions = generateWeekSuggestions(plan);
+    
+    // If AI is enabled, enhance the plan with AI recommendations
+    if (aiEnabled && aiPlannerService.isInitialized()) {
+      try {
+        console.log('Enhancing plan with AI...');
+        const aiResponse = await aiPlannerService.generateWeekPlan(plan, preferences);
+        
+        if (aiResponse.success) {
+          plan.aiGenerated = true;
+          plan.aiRecommendations = aiResponse.message;
+          plan.aiUsage = aiResponse.usage;
+          
+          // Show AI chat interface with the generated plan
+          setWeekPlan(plan);
+          setShowAIChat(true);
+          return;
+        } else {
+          console.warn('AI generation failed:', aiResponse.error);
+          // Fall back to standard plan
+        }
+      } catch (error) {
+        console.error('AI enhancement failed:', error);
+        // Fall back to standard plan
+      }
+    }
     
     console.log('Week plan generated:', plan);
     setWeekPlan(plan);
@@ -701,11 +781,17 @@ export default function WeekPlannerScreen({ navigation }) {
         justifyContent: 'space-between', 
         alignItems: 'center', 
         padding: 16,
-        paddingTop: 20
+        paddingTop: Math.max(insets.top + 16, 60),
+        backgroundColor: '#212121'
       }}>
-        <TouchableOpacity onPress={() => navigateWeek(-1)}>
-          <MaterialCommunityIcons name="chevron-left" size={28} color="#00ADB5" />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <TouchableOpacity onPress={() => navigation.openDrawer()} style={{ marginRight: 12 }}>
+            <MaterialCommunityIcons name="menu" size={24} color="#EEEEEE" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => navigateWeek(-1)}>
+            <MaterialCommunityIcons name="chevron-left" size={28} color="#00ADB5" />
+          </TouchableOpacity>
+        </View>
         
         <View style={{ alignItems: 'center' }}>
           <Text style={{ color: '#EEEEEE', fontSize: 18, fontWeight: '600' }}>
@@ -739,11 +825,34 @@ export default function WeekPlannerScreen({ navigation }) {
             alignItems: 'center'
           }}
         >
-          <MaterialCommunityIcons name="auto-fix" size={18} color="#EEEEEE" />
+          <MaterialCommunityIcons 
+            name={aiEnabled ? "robot" : "auto-fix"} 
+            size={18} 
+            color="#EEEEEE" 
+          />
           <Text style={{ color: '#EEEEEE', marginLeft: 6, fontWeight: '500' }}>
-            Generate Plan
+            {aiEnabled ? 'AI Plan' : 'Generate Plan'}
           </Text>
         </TouchableOpacity>
+
+        {aiEnabled && (
+          <TouchableOpacity 
+            onPress={() => setShowAIChat(true)}
+            style={{
+              backgroundColor: '#4CAF50',
+              paddingHorizontal: 20,
+              paddingVertical: 10,
+              borderRadius: 8,
+              flexDirection: 'row',
+              alignItems: 'center'
+            }}
+          >
+            <MaterialCommunityIcons name="chat" size={18} color="#EEEEEE" />
+            <Text style={{ color: '#EEEEEE', marginLeft: 6, fontWeight: '500' }}>
+              AI Chat
+            </Text>
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity 
           onPress={() => navigation.navigate('PlannerPreferences')}
@@ -797,6 +906,20 @@ export default function WeekPlannerScreen({ navigation }) {
         contentContainerStyle={{ paddingBottom: 20 }}
         showsVerticalScrollIndicator={false}
       />
+
+      {/* AI Chat Modal */}
+      <Modal
+        visible={showAIChat}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        statusBarTranslucent={false}
+      >
+        <AIChatInterface
+          weekPlan={weekPlan}
+          preferences={preferences}
+          onClose={() => setShowAIChat(false)}
+        />
+      </Modal>
     </LinearGradient>
   );
 }

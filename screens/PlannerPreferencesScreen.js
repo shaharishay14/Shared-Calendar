@@ -13,6 +13,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import aiPlannerService from '../services/aiPlannerService';
 
 const PREFERENCES_KEY = 'planner_preferences';
 
@@ -55,13 +56,17 @@ const defaultPreferences = {
   // Notifications
   planningReminders: true,
   trafficAlerts: true,
-  sleepLocationReminders: true
+  sleepLocationReminders: true,
+  
+  // AI Assistant Settings
+  aiEnabled: false
 };
 
 export default function PlannerPreferencesScreen({ navigation }) {
   const [preferences, setPreferences] = useState(defaultPreferences);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [testingAI, setTestingAI] = useState(false);
 
   // Load preferences
   useEffect(() => {
@@ -87,6 +92,12 @@ export default function PlannerPreferencesScreen({ navigation }) {
     try {
       setSaving(true);
       await AsyncStorage.setItem(PREFERENCES_KEY, JSON.stringify(preferences));
+      
+      // Initialize AI service if enabled
+      if (preferences.aiEnabled) {
+        await aiPlannerService.initialize();
+      }
+      
       Alert.alert('Success', 'Preferences saved successfully!');
     } catch (error) {
       console.error('Error saving preferences:', error);
@@ -108,6 +119,38 @@ export default function PlannerPreferencesScreen({ navigation }) {
     current[keys[keys.length - 1]] = value;
     
     setPreferences(newPreferences);
+  };
+
+  // Test AI connection
+  const testAIConnection = async () => {
+    setTestingAI(true);
+    try {
+      // Initialize AI service
+      const initialized = await aiPlannerService.initialize();
+      
+      if (!initialized) {
+        Alert.alert('Error', 'No OpenAI API key found. Please set OPENAI_API_KEY in your .env file.');
+        return;
+      }
+
+      // Test with a simple message
+      const response = await aiPlannerService.chatWithAI(
+        "Hello, please respond with 'AI connection successful!' to test the connection.",
+        null,
+        {},
+        []
+      );
+
+      if (response.success) {
+        Alert.alert('Success', 'AI connection is working! You can now use AI-powered week planning.');
+      } else {
+        Alert.alert('Connection Failed', response.error || 'Unknown error occurred');
+      }
+    } catch (error) {
+      Alert.alert('Error', error.message || 'Failed to connect to AI service');
+    } finally {
+      setTestingAI(false);
+    }
   };
 
   const renderSection = (title, children) => (
@@ -455,6 +498,49 @@ export default function PlannerPreferencesScreen({ navigation }) {
                 preferences.sleepLocationReminders,
                 (value) => updatePreference('sleepLocationReminders', value),
                 'Reminders about where to sleep for optimal next-day travel'
+              )}
+            </>
+          ))}
+
+          {/* AI Assistant Settings */}
+          {renderSection('🤖 AI Assistant', (
+            <>
+              {renderSwitch(
+                'Enable AI Planning Assistant',
+                preferences.aiEnabled,
+                (value) => updatePreference('aiEnabled', value),
+                'Use OpenAI to generate intelligent week plans and recommendations. API key should be set in .env file.'
+              )}
+              
+              {preferences.aiEnabled && (
+                <TouchableOpacity
+                  onPress={testAIConnection}
+                  disabled={testingAI}
+                  style={{
+                    backgroundColor: testingAI ? '#555' : '#00ADB5',
+                    paddingVertical: 12,
+                    paddingHorizontal: 16,
+                    borderRadius: 8,
+                    flexDirection: 'row',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    marginTop: 8
+                  }}
+                >
+                  <MaterialCommunityIcons 
+                    name={testingAI ? "loading" : "connection"} 
+                    size={18} 
+                    color="#EEEEEE" 
+                  />
+                  <Text style={{
+                    color: '#EEEEEE',
+                    fontSize: 14,
+                    fontWeight: '500',
+                    marginLeft: 8
+                  }}>
+                    {testingAI ? 'Testing...' : 'Test AI Connection'}
+                  </Text>
+                </TouchableOpacity>
               )}
             </>
           ))}

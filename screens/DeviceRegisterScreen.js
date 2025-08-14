@@ -42,7 +42,7 @@ export default function DeviceRegisterScreen({ route, navigation }) {
       });
       if (err) throw err;
       setRegistered(true);
-      navigation.replace('Home');
+      navigation.replace('MainApp');
     } catch (e) {
       setError(e.message || 'Registration failed');
     }

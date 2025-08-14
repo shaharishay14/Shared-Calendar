@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import MainNavigator from './navigation/MainNavigator';
 import { initializeDatabase } from './database/db';
 import { useFonts, Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from '@expo-google-fonts/inter';
+import { ProfileProvider } from './contexts/ProfileContext';
 
 export default function App() {
   const [fontsLoaded] = useFonts({
@@ -30,8 +31,10 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <StatusBar style="auto" />
-      <MainNavigator />
+      <ProfileProvider>
+        <StatusBar style="light" backgroundColor="#212121" />
+        <MainNavigator />
+      </ProfileProvider>
     </SafeAreaProvider>
   );
 }
